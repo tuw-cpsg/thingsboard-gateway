@@ -32,6 +32,7 @@ if config == None:
     quit()
 
 BEACON_UUID = config['beacon']['uuid']
+BEACON_TIMEOUT = config['beacon']['timeout']
 THINGSBOARD_HOST = config['thingsboard']['host']
 THINGSBOARD_PORT = config['thingsboard']['port']
 ACCESS_TOKEN = config['thingsboard']['access_token']
@@ -44,7 +45,6 @@ class Requester(GATTRequester):
     def on_notification(self, handle, data):
         self._data = data
         self.wakeup.set()
-        self.wakeup.clear()
 
     def get_data(self):
         return self._data
@@ -91,10 +91,10 @@ class Device(object):
         self.connect()
         self.send_data()
         while self.state_connect:
-            self.received.wait()
-#            if self.received.wait(300) != True:
-#                print 'Timeout reading from {}'.format(self._address)
-#                break
+            self.received.clear()
+            if not self.received.wait(BEACON_TIMEOUT):
+                print 'Timeout reading from {}'.format(self._address)
+                break
             self.send_telemetry_msg(self.requester.get_data())
         self.disconnect()
 

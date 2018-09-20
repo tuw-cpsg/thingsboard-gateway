@@ -10,6 +10,7 @@ In order to install the gateway docker image, you need to create/modify a config
 cat > config.yaml << EOF
 beacon:
     uuid: 12345678-1234-1234-1234-123456789abc
+    timeout: 90
 thingsboard:
     host: tba.tba.tba
     port: 1883
