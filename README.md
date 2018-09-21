@@ -25,5 +25,5 @@ docker build -t thingsboard-gateway .
 ### Run
 Run it, autostart enabled:
 ```
-docker run --net=host --restart=always --privileged thingsboard-gateway:latest
+docker run --net=host --restart=always --privileged --name thingsboard-gateway thingsboard-gateway:latest &
 ```
