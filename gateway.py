@@ -14,6 +14,8 @@ from gattlib import GATTRequester
 from bluetooth.ble import BeaconService
 import paho.mqtt.client as mqtt
 
+VERSION = '0.1.0-20180924.1'
+
 config = None
 for loc in os.curdir, os.path.expanduser('~'), '/etc/thingsboard':
     try:
@@ -239,6 +241,7 @@ service = BeaconService()
 mqttc.subscribe('v1/devices/me/rpc/request/+')
 # Sending current status
 tmp['value'] = True;
+tmp['version'] = VERSION;
 mqttc.publish('v1/devices/me/attributes', json.dumps(tmp), 1)
 # Sending id data to ThingsBoard
 mqttc.publish('v1/devices/me/telemetry', json.dumps(ip_info_msg()), 1)
