@@ -150,7 +150,10 @@ class Device(object):
                 jdata['precipitation'] = tmp * 0.1
 
         elif self._major == 102:
-            jdata['timestamp']      = (struct.unpack_from('<I', data, 3 + 0))
+            jdata['timestamp']      = (struct.unpack_from('<I', data, 3 +  0)[0])
+            jdata['temperature']    = (struct.unpack_from('<h', data, 3 +  4)[0] / 16.0)
+            jdata['moisture']       = (struct.unpack_from('<h', data, 3 +  6)[0])
+            jdata['battery']        = (struct.unpack_from('<B', data, 3 +  8)[0])
 
         jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
         #print(json.dumps(jdata))
