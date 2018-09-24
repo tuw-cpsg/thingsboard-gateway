@@ -14,7 +14,7 @@ from gattlib import GATTRequester
 from bluetooth.ble import BeaconService
 import paho.mqtt.client as mqtt
 
-VERSION = '0.1.0-20180924.1'
+VERSION = '0.1.0-2'
 
 config = None
 for loc in os.curdir, os.path.expanduser('~'), '/etc/thingsboard':
@@ -153,7 +153,9 @@ class Device(object):
 
         elif self._major == 102:
             jdata['timestamp']      = (struct.unpack_from('<I', data, 3 +  0)[0])
-            jdata['temperature']    = (struct.unpack_from('<h', data, 3 +  4)[0] / 16.0)
+            tmp = (struct.unpack_from('<h', data, 3 +  4)[0])
+            if tmp != -1001 and tmp != -1002 and tmp != -1003:
+                jdata['temperature'] = tmp / 16.0
             jdata['moisture']       = (struct.unpack_from('<h', data, 3 +  6)[0])
             jdata['battery']        = (struct.unpack_from('<B', data, 3 +  8)[0])
 
