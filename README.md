@@ -3,6 +3,11 @@ Gateway to connect BLE sensors to Thingsboard.
 BLE sensors are detected via beacon UUIDs.
 The data is transmitted using MQTT to the Thingsboard server.
 
+# Prerequisite
+```
+apt-get install docker.io
+```
+
 # Installation
 In order to install the gateway docker image, you need to create/modify a config file, build and run the docker image.
 ## Config
