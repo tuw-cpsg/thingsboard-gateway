@@ -7,6 +7,7 @@ import time
 import socket
 import sys
 import os
+import random
 import struct
 from threading import Thread
 from threading import Event
@@ -39,22 +40,12 @@ THINGSBOARD_HOST = config['thingsboard']['host']
 THINGSBOARD_PORT = config['thingsboard']['port']
 ACCESS_TOKEN = config['thingsboard']['access_token']
 
-class Requester(GATTRequester):
-    def __init__(self, wakeup, *args):
-        GATTRequester.__init__(self, *args)
-        self.wakeup = wakeup
+class Device(GATTRequester):
+    def __init__(self, mqttc, data, address, *args):
+        #GATTRequester.__init__(self, *args)
+        GATTRequester.__init__(self, address, False)
 
-    def on_notification(self, handle, data):
-        self._data = data
-        self.wakeup.set()
-
-    def get_data(self):
-        return self._data
-
-class Device(object):
-    def __init__(self, mqttc, data, address):
         self.received = Event()
-        self.requester = Requester(self.received, address, False)
 
         self._mqttc = mqttc
 
@@ -68,37 +59,61 @@ class Device(object):
 
         self.state_connect = True
 
-    def connect(self):
+    def on_notification(self, handle, data):
+        # print("{:x} = {:x}".format(handle, data))
+        # print("{:x} = {:x}".format(handle, struct.unpack_from('<h', data, 3)[0]))
+        self.send_telemetry_msg(handle, data)
+        self.received.set()
+
+    def conn(self):
         print('Connecting to {}'.format(self._address))
         sys.stdout.flush()
-        self.requester.connect(True, 'random')
+        self.connect(True, 'random')
         self.send_connect_msg()
         self.send_attributes_msg()
 
-    def disconnect(self):
+    def disc(self):
         print('Disconnecting from {}'.format(self._address))
         self.send_disconnect_msg()
-        self.requester.disconnect()
+        self.disconnect()
+
+    def connect_to_handle(self, handle):
+        attempt = 0
+        while attempt < 3:
+            try:
+                self.write_by_handle(handle, str('\1\0'))
+                break
+            except Exception as e:
+                print('Error setting handle {:x} for {}'.format(handle, self._address))
+                attempt += 1
+                time.sleep(random.randint(1, 5))
+        if attempt > 2:
+            print('Error setting handle {:x} 3 times for {}, aborting'.format(handle, self._address))
+            self.state_connect = False
 
     def send_data(self):
-        self.requester.write_by_handle(0x0012, str('\1\0'))
+        Thread(target = self.connect_to_handle, kwargs={'handle': 0x000f}).start()
+        Thread(target = self.connect_to_handle, kwargs={'handle': 0x0013}).start()
+        Thread(target = self.connect_to_handle, kwargs={'handle': 0x0016}).start()
 
     def set_disconnect(self):
         self.state_connect = False
 
     def start(self):
+        self.state_connect = True
         Thread(target = self.wait_notification).start()
 
     def wait_notification(self):
-        self.connect()
+        self.conn()
         self.send_data()
         while self.state_connect:
             self.received.clear()
             if not self.received.wait(BEACON_TIMEOUT):
                 print 'Timeout reading from {}'.format(self._address)
+                self.state_connect = False
                 break
-            self.send_telemetry_msg(self.requester.get_data())
-        self.disconnect()
+            #self.send_telemetry_msg(self.requester.get_data())
+        self.disc()
 
     def __str__(self):
         ret = 'Beacon: address:{ADDR} uuid:{UUID} major:{MAJOR}'\
@@ -131,7 +146,29 @@ class Device(object):
     def send_disconnect_msg(self):
         self._mqttc.publish('v1/gateway/disconnect', json.dumps(b.connect_msg()), 1)
 
-    def send_telemetry_msg(self, data):
+    def send_telemetry_msg(self, handle, data):
+        ts = int(round(time.time() * 1000))
+        jdata = {}
+
+        if self._major == 101:
+            if(handle == 0x0015):
+                jdata['battery']        = (struct.unpack_from('<h', data, 3)[0])
+
+        elif self._major == 102:
+            if(handle == 0x000e):
+                jdata['battery']        = (struct.unpack_from('<h', data, 3)[0])
+            if(handle == 0x0012):
+                temp = struct.unpack_from('<h', data, 3)[0]
+                if(tmp > -1000):
+                    jdata['temperature']    = temp / 16.0
+            if(handle == 0x0015):
+                jdata['moisture']       = (struct.unpack_from('<h', data, 3)[0])
+
+        jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
+        #print(json.dumps(jdata))
+        self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
+
+    def send_telemetry_msgs(self, data):
         ts = int(round(time.time() * 1000))
         jdata = {}
 
@@ -160,8 +197,8 @@ class Device(object):
             jdata['battery']        = (struct.unpack_from('<B', data, 3 +  8)[0])
 
         jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
-        #print(json.dumps(jdata))
-        self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
+        print(json.dumps(jdata))
+        #self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
 
 
 def poweroff():
@@ -256,8 +293,9 @@ try:
         for address, data in list(devices.items()):
             b = Device(mqttc, data, address)
             if b._uuid == BEACON_UUID:
-                readers[address] = b
-                b.start()
+                if address not in readers:
+                    readers[address] = b
+                readers[address].start()
         time.sleep(10)
 
 except KeyboardInterrupt:
@@ -267,7 +305,7 @@ except Exception as e:
     print str(e)
 
 #loop_stop(force=False)
-for address, reader in readers:
+for address, reader in readers.items():
     reader.set_disconnect()
 
 mqttc.disconnect()
