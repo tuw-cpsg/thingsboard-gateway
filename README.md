@@ -20,6 +20,10 @@ thingsboard:
     host: tba.tba.tba
     port: 1883
     access_token: TBA
+sensor:
+    handles:
+        00002a19-0000-1000-8000-00805f9b34fb: 'battery'
+        00002a6e-0000-1000-8000-00805f9b34fb: 'temperature'
 EOF
 ```
 ## Docker Image

@@ -39,6 +39,7 @@ BEACON_TIMEOUT = config['beacon']['timeout']
 THINGSBOARD_HOST = config['thingsboard']['host']
 THINGSBOARD_PORT = config['thingsboard']['port']
 ACCESS_TOKEN = config['thingsboard']['access_token']
+SENSOR_HANDLES = config['sensor']['handles']
 
 class Device(GATTRequester):
     def __init__(self, mqttc, data, address, *args):
@@ -58,6 +59,8 @@ class Device(GATTRequester):
         self._address = address
 
         self.state_connect = True
+
+        self.handle_to_name = {}
 
     def on_notification(self, handle, data):
         # print("{:x} = {:x}".format(handle, data))
@@ -92,9 +95,13 @@ class Device(GATTRequester):
             self.state_connect = False
 
     def send_data(self):
-        Thread(target = self.connect_to_handle, kwargs={'handle': 0x000f}).start()
-        Thread(target = self.connect_to_handle, kwargs={'handle': 0x0013}).start()
-        Thread(target = self.connect_to_handle, kwargs={'handle': 0x0016}).start()
+        characteristics = self.discover_characteristics()
+        for characteristic in characteristics:
+            if characteristic['uuid'] not in SENSOR_HANDLES.keys():
+                continue
+            Thread(target = self.connect_to_handle,
+                    kwargs={'handle': characteristic['value_handle']+1}).start()
+            self.handle_to_name[characteristic['value_handle']] = SENSOR_HANDLES[characteristic['uuid']]
 
     def set_disconnect(self):
         self.state_connect = False
@@ -150,19 +157,14 @@ class Device(GATTRequester):
         ts = int(round(time.time() * 1000))
         jdata = {}
 
-        if self._major == 101:
-            if(handle == 0x0015):
-                jdata['battery']        = (struct.unpack_from('<h', data, 3)[0])
-
-        elif self._major == 102:
-            if(handle == 0x000e):
-                jdata['battery']        = (struct.unpack_from('<h', data, 3)[0])
-            if(handle == 0x0012):
-                temp = struct.unpack_from('<h', data, 3)[0]
-                if(tmp > -1000):
-                    jdata['temperature']    = temp / 16.0
-            if(handle == 0x0015):
-                jdata['moisture']       = (struct.unpack_from('<h', data, 3)[0])
+        if self.handle_to_name[handle] == 'battery':
+            jdata['battery']        = (struct.unpack_from('<h', data, 3)[0])
+        elif self.handle_to_name[handle] == 'temperature':
+            temp = struct.unpack_from('<h', data, 3)[0]
+            if(tmp > -1000):
+                jdata['temperature']    = temp / 16.0
+        elif self.handle_to_name[handle] == 'moisture':
+            jdata['moisture']       = (struct.unpack_from('<h', data, 3)[0])
 
         jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
         #print(json.dumps(jdata))
@@ -188,16 +190,8 @@ class Device(GATTRequester):
             if tmp > 0:
                 jdata['precipitation'] = tmp * 0.1
 
-        elif self._major == 102:
-            jdata['timestamp']      = (struct.unpack_from('<I', data, 3 +  0)[0])
-            tmp = (struct.unpack_from('<h', data, 3 +  4)[0])
-            if tmp != -1001 and tmp != -1002 and tmp != -1003:
-                jdata['temperature'] = tmp / 16.0
-            jdata['moisture']       = (struct.unpack_from('<h', data, 3 +  6)[0])
-            jdata['battery']        = (struct.unpack_from('<B', data, 3 +  8)[0])
-
         jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
-        print(json.dumps(jdata))
+        #print(json.dumps(jdata))
         #self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
 
 
