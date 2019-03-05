@@ -65,7 +65,10 @@ class Device(GATTRequester):
     def on_notification(self, handle, data):
         # print("{:x} = {:x}".format(handle, data))
         # print("{:x} = {:x}".format(handle, struct.unpack_from('<h', data, 3)[0]))
-        self.send_telemetry_msg(handle, data)
+        if self._major == 101:
+            self.unpack_and_send_telemetry_msg(data)
+        else:
+            self.send_telemetry_msg(handle, data)
         self.received.set()
 
     def conn(self):
@@ -170,7 +173,7 @@ class Device(GATTRequester):
         #print(json.dumps(jdata))
         self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
 
-    def send_telemetry_msgs(self, data):
+    def unpack_and_send_telemetry_msg(self, data):
         ts = int(round(time.time() * 1000))
         jdata = {}
 
@@ -190,10 +193,9 @@ class Device(GATTRequester):
             if tmp > 0:
                 jdata['precipitation'] = tmp * 0.1
 
-        jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
-        #print(json.dumps(jdata))
-        #self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
-
+            jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
+            #print(json.dumps(jdata))
+            self._mqttc.publish('v1/gateway/telemetry', json.dumps(jdata), 1)
 
 def poweroff():
     time.sleep(1)
@@ -276,8 +278,10 @@ mqttc.subscribe('v1/devices/me/rpc/request/+')
 tmp['value'] = True;
 tmp['version'] = VERSION;
 mqttc.publish('v1/devices/me/attributes', json.dumps(tmp), 1)
+print(json.dumps(tmp))
 # Sending id data to ThingsBoard
 mqttc.publish('v1/devices/me/telemetry', json.dumps(ip_info_msg()), 1)
+print(json.dumps(ip_info_msg()))
 
 readers = {}
 
