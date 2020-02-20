@@ -1,3 +1,5 @@
+import logging
+
 import sys
 import json
 import paho.mqtt.client as mqtt
@@ -38,6 +40,8 @@ class EddystoneDevice(GATTRequester):
         self.cccd_handle  = 0;
         
         self.last_synced  = 0;
+        
+        self.jdata = {self._address: [] }
 
         if self._frame_type == 16:
             url = bytes(self._data)
@@ -71,10 +75,10 @@ class EddystoneDevice(GATTRequester):
         self.received.set()
 
     def conn(self):
-        print('Connecting to {}'.format(self._address))
+        logging.info('Connecting to {}'.format(self._address))
         sys.stdout.flush()
         self.connect(True, 'random')
-        self.send_connect_msg()
+        #self.send_connect_msg()
         self.send_attributes_msg()
         primaries = self.discover_primary()
         for primary in primaries:
@@ -82,10 +86,10 @@ class EddystoneDevice(GATTRequester):
                 self.value_handle = primary['start'] + 2;
                 self.cccd_handle  = primary['start'] + 3;
                 
-                print("AFC primary service:  {}".format(primary))
+                logging.info("AFC primary service:  {}".format(primary))
                 self.descriptors = self.discover_descriptors(self.cccd_handle + 1, primary['end'], '')
                 for desc in self.descriptors:
-                    print("AFC descriptor found: {}".format(desc))
+                    logging.info("AFC descriptor found: {}".format(desc))
             elif primary['uuid'] == GEN_CTS_UUID:
                 cts_descriptors = self.discover_descriptors(primary['start'], primary['end'], GEN_CTS_CT_UUID)
                 self.cts_ct_handle = 0
@@ -94,8 +98,8 @@ class EddystoneDevice(GATTRequester):
                         self.cts_ct_handle = desc['handle']
 
     def disc(self):
-        print('Disconnecting from {}'.format(self._address))
-        self.send_disconnect_msg()
+        logging.info('Disconnecting from {}'.format(self._address))
+        #self.send_disconnect_msg()
         self.disconnect()
 
     def connect_to_handle(self, handle):
@@ -105,11 +109,11 @@ class EddystoneDevice(GATTRequester):
                 self.write_by_handle(handle, b'\x02')
                 break
             except Exception as e:
-                print('Error setting handle {:x} for {}'.format(handle, self._address))
+                logging.error('Error setting handle {:x} for {}'.format(handle, self._address))
                 attempt += 1
                 time.sleep(random.randint(1, 5))
         if attempt > 2:
-            print('Error setting handle {:x} 3 times for {}, aborting'.format(handle, self._address))
+            logging.debug('Error setting handle {:x} 3 times for {}, aborting'.format(handle, self._address))
             self.state_connect = False
 
     def enable_indications(self):
@@ -133,13 +137,15 @@ class EddystoneDevice(GATTRequester):
         while self.state_connect:
             self.received.clear()
             if not self.received.wait(self._timeout):
-                print('Timeout reading from {}'.format(self._address))
+                logging.debug('Timeout reading from {}'.format(self._address))
                 self.state_connect = False
                 break
             #self.send_telemetry_msg(self.requester.get_data())
         self.sync_time()
         self.last_synced = time.time();
         self.disc()
+        
+        print(json.dumps(self.jdata))
 
     def sync_time(self):
         if self.cts_ct_handle == 0:
@@ -200,6 +206,7 @@ class EddystoneDevice(GATTRequester):
                 jdata['moisture'] = (struct.unpack_from('<H', data, offset)[0] / 100.0)
                 offset = offset + 2;
 
+        self.jdata[self._address].append({'ts': ts, 'values': jdata})
         jdata = { self._address: [ {'ts': ts, 'values': jdata } ] }
         
         #print(json.dumps(jdata))

@@ -3,6 +3,7 @@
 import yaml
 import json
 
+import logging
 import time
 import socket
 import sys
@@ -21,6 +22,8 @@ import ibeacon_device
 
 VERSION = '0.1.0-3'
 
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+
 config = None
 for loc in os.curdir, os.path.expanduser('~'), '/etc/thingsboard':
     try:
@@ -29,13 +32,13 @@ for loc in os.curdir, os.path.expanduser('~'), '/etc/thingsboard':
                 config = yaml.load(stream, Loader=yaml.FullLoader)
                 break
             except yaml.YAMLError as exc:
-                print(exc)
+                logging.error(exc)
                 quit()
     except IOError as exc:
-        print(exc)
+        logging.error(exc)
 
 if config == None:
-    print('No valid configuration found.')
+    logging.error('No valid configuration found.')
     quit()
 
 BEACON_UUID = config['beacon']['uuid']
@@ -46,10 +49,10 @@ ACCESS_TOKEN = config['thingsboard']['access_token']
 SENSOR_HANDLES = config['sensor']['handles']
 
 def on_connect(mqttc, obj, flags, rc):
-    print('rc: ' + str(rc))
+    logging.info('rc: {}'.format(str(rc)))
 
 def on_message(mqttc, obj, msg):
-    print(msg.topic + ' ' + str(msg.qos) + ' ' + str(msg.payload))
+    logging.info('{} {} {}'.format(msg.topic, msg.qos, msg.payload))
     # Decode JSON request
     data = json.loads(msg.payload)
     # Check request method
@@ -67,13 +70,13 @@ def on_message(mqttc, obj, msg):
             Thread(target = poweroff).start()
 
 def on_publish(mqttc, obj, mid):
-    print('mid: ' + str(mid))
+    logging.info('mid: {}'.format(str(mid)))
 
 def on_subscribe(mqttc, obj, mid, granted_qos):
-    print('Subscribed: ' + str(mid) + ' ' + str(granted_qos))
+    logging.info('Subscribed: {} {}'.format(str(mid), str(granted_qos)))
 
 def on_log(mqttc, obj, level, string):
-    print(string)
+    logging.info(string)
 
 def ip_info_msg():
     s = 0;
@@ -120,10 +123,10 @@ mqttc.subscribe('v1/devices/me/rpc/request/+')
 tmp['value'] = True;
 tmp['version'] = VERSION;
 mqttc.publish('v1/devices/me/attributes', json.dumps(tmp), 1)
-print(json.dumps(tmp))
+logging.info(json.dumps(tmp))
 # Sending id data to ThingsBoard
 mqttc.publish('v1/devices/me/telemetry', json.dumps(ip_info_msg()), 1)
-print(json.dumps(ip_info_msg()))
+logging.info(json.dumps(ip_info_msg()))
 
 readers = {}
 
@@ -133,25 +136,26 @@ try:
         for address, data in list(devices.items()):
             b = EddystoneDevice(mqttc, data, address, BEACON_TIMEOUT)
             if b._url == 'http://www.afarcloud.eu/':
-                print("AFC Eddystone URL found: {} ({})".format(b._address, b._url))
+                logging.info("AFC Eddystone URL found: {} ({})".format(b._address, b._url))
                 if address not in readers:
                     readers[address] = b
                 if readers[address].state_connect == True:
                     continue
                 if (time.time() - readers[address].last_synced) > 900:
-                    readers[address].start(True)
-                    time.sleep(2)
+                    readers[address].start(False)
+                    #readers[address].start(True)
+                    #time.sleep(2)
         time.sleep(10)
 
 except KeyboardInterrupt:
     pass
 
 except Exception as e:
-    print(str(e))
+    logging.error(str(e))
 
 #loop_stop(force=False)
 for address, reader in readers.items():
     reader.set_disconnect()
 
 mqttc.disconnect()
-print('Done.')
+logging.info('Done.')
