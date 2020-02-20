@@ -8,7 +8,7 @@ RUN apt-get update && \
     apt-get -qy install\
     curl \
     ca-certificates \
-    python python-pip python-requests python-yaml python-setuptools python-dev \
+    python3 python3-pip python3-requests python3-yaml python3-setuptools python3-dev \
     bluez libbluetooth-dev \
     pkg-config libglib2.0-dev libboost-thread-dev libboost-python-dev  \
     bc \
@@ -16,8 +16,12 @@ RUN apt-get update && \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip
-RUN pip install gattlib pybluez paho-mqtt
+ADD pygattlib /opt/
+
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install pybluez paho-mqtt
+RUN python3 /opt/pygattlib/setup.py build
+RUN python3 /opt/pygattlib/setup.py install
 
 ADD gateway.py /opt/thingsboard/gateway.py
 ADD config.yaml /etc/thingsboard/config.yaml
