@@ -13,17 +13,22 @@ from threading import Thread
 
 AFC_GSS_UUID                = '8fee1801-3c17-4189-8556-a293fa6b2739'
 AFC_TIMESTAMP_UUID          = '8fee2901-3c17-4189-8556-a293fa6b2739'
+AFC_AMB_TEMPERATURE_UUID    = '8fee2902-3c17-4189-8556-a293fa6b2739'
+AFC_AMB_HUMDITY_UUID        = '8fee2903-3c17-4189-8556-a293fa6b2739'
+AFC_ATM_PRESSURE_UUID       = '8fee2916-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_TEMPERATURE_UUID   = '8fee2917-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_HUMIDITY_UUID      = '8fee2918-3c17-4189-8556-a293fa6b2739'
 AFC_BATTERY_VOLTAGE_UUID    = '8fee2919-3c17-4189-8556-a293fa6b2739'
+
+AFC_SOIL_HUMIDITY_L_UUID    = '8fee29a1-3c17-4189-8556-a293fa6b2739'
+AFC_SOIL_HUMIDITY_H_UUID    = '8fee29a2-3c17-4189-8556-a293fa6b2739'
 
 GEN_CTS_UUID                = '00001805-0000-1000-8000-00805f9b34fb'
 GEN_CTS_CT_UUID             = '00002a2b-0000-1000-8000-00805f9b34fb'
 
 class EddystoneDevice(GATTRequester):
     def __init__(self, mqttc, data, address, timeout, *args):
-        #GATTRequester.__init__(self, *args)
-        GATTRequester.__init__(self, address, False)
+        GATTRequester.__init__(self, address, False, *args)
 
         self.received = Event()
 
@@ -35,6 +40,7 @@ class EddystoneDevice(GATTRequester):
         self._data          = data[3:]
         self._uri           = 0
         self._url           = ''
+        self._calibration   = False
         
         self.value_handle = 0;
         self.cccd_handle  = 0;
@@ -78,7 +84,7 @@ class EddystoneDevice(GATTRequester):
         logging.info('Connecting to {}'.format(self._address))
         sys.stdout.flush()
         self.connect(True, 'random')
-        #self.send_connect_msg()
+        self.send_connect_msg()
         self.send_attributes_msg()
         primaries = self.discover_primary()
         for primary in primaries:
@@ -99,7 +105,7 @@ class EddystoneDevice(GATTRequester):
 
     def disc(self):
         logging.info('Disconnecting from {}'.format(self._address))
-        #self.send_disconnect_msg()
+        self.send_disconnect_msg()
         self.disconnect()
 
     def connect_to_handle(self, handle):
@@ -204,6 +210,26 @@ class EddystoneDevice(GATTRequester):
 
             elif desc['uuid'] == AFC_SOIL_HUMIDITY_UUID:
                 jdata['moisture'] = (struct.unpack_from('<H', data, offset)[0] / 100.0)
+                offset = offset + 2;
+
+            elif desc['uuid'] == AFC_AMB_TEMPERATURE_UUID:
+                jdata['temperature'] = (struct.unpack_from('<h', data, offset)[0] / 100.0)
+                offset = offset + 2;
+
+            elif desc['uuid'] == AFC_AMB_HUMDITY_UUID:
+                jdata['humidity'] = (struct.unpack_from('<H', data, offset)[0] / 100.0)
+                offset = offset + 2;
+
+            elif desc['uuid'] == AFC_ATM_PRESSURE_UUID:
+                jdata['pressure'] = (struct.unpack_from('<I', data, offset)[0] / 1000.0)
+                offset = offset + 4;
+
+            elif desc['uuid'] == AFC_SOIL_HUMIDITY_L_UUID:
+                self._calibration = True
+                jdata['moisture_low'] = (struct.unpack_from('<H', data, offset)[0])
+                offset = offset + 2;
+            elif desc['uuid'] == AFC_SOIL_HUMIDITY_H_UUID:
+                jdata['moisture_high'] = (struct.unpack_from('<H', data, offset)[0])
                 offset = offset + 2;
 
         self.jdata[self._address].append({'ts': ts, 'values': jdata})

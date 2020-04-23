@@ -47,6 +47,7 @@ THINGSBOARD_HOST = config['thingsboard']['host']
 THINGSBOARD_PORT = config['thingsboard']['port']
 ACCESS_TOKEN = config['thingsboard']['access_token']
 SENSOR_HANDLES = config['sensor']['handles']
+HCI_DEVICE = config['hci']
 
 def on_connect(mqttc, obj, flags, rc):
     logging.info('rc: {}'.format(str(rc)))
@@ -114,8 +115,8 @@ mqttc.loop_start()
 time.sleep(1)
 
 #service = BeaconService()
-eddystone_service = EddystoneService()
-discovery_service = DiscoveryService()
+eddystone_service = EddystoneService(HCI_DEVICE)
+#discovery_service = DiscoveryService("hci1")
 
 # Subscribing to receive RPC requests
 mqttc.subscribe('v1/devices/me/rpc/request/+')
@@ -133,18 +134,34 @@ readers = {}
 try:
     while True:
         devices = eddystone_service.scan(2)
+        logging.info("Scanned for two seconds ..")
         for address, data in list(devices.items()):
-            b = EddystoneDevice(mqttc, data, address, BEACON_TIMEOUT)
+            b = EddystoneDevice(mqttc, data, address, BEACON_TIMEOUT, HCI_DEVICE)
             if b._url == 'http://www.afarcloud.eu/':
                 logging.info("AFC Eddystone URL found: {} ({})".format(b._address, b._url))
                 if address not in readers:
                     readers[address] = b
                 if readers[address].state_connect == True:
                     continue
+                if readers[address]._calibration == True:
+                    if (time.time() - readers[address].last_synced) > 60:
+                        try:
+                            readers[address].start(False)
+                        #del readers[address]
+                        #readers[address].start(True)
+                        #time.sleep(10)
+                        except Exception as e:
+                            logging.error(str(e))
+                    continue
                 if (time.time() - readers[address].last_synced) > 900:
-                    readers[address].start(False)
-                    #readers[address].start(True)
-                    #time.sleep(2)
+                    try:
+                        readers[address].start(False)
+                        #del readers[address]
+                        #readers[address].start(True)
+                        #time.sleep(10)
+                    except Exception as e:
+                        logging.error(str(e))
+        break
         time.sleep(10)
 
 except KeyboardInterrupt:
