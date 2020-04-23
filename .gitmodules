@@ -1,3 +1,0 @@
-[submodule "pygattlib"]
-	path = pygattlib
-	url = git@git.code.tecnalia.com:afarcloud/pygattlib.git

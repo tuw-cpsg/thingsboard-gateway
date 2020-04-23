@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+    thingsboard-gateway:
+        build:
+            context: .
+        container_name: thingsboard-gateway
+        restart: always
+        privileged: true
+        volumes:
+            - /var/run/dbus:/var/run/dbus
+        env_file:
+            - config

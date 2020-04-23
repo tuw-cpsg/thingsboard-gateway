@@ -1,178 +1,137 @@
-#!/usr/bin/python3
-
-import yaml
-import json
+#!/usr/bin/env python3
 
 import logging
+
+import dbus
+import dbus.service
+import dbus.mainloop.glib
+from gi.repository import GLib
+
+import dbluez
+import parser
+
+import threading
+from threading import Lock
 import time
-import socket
-import sys
-import os
-import random
-import struct
-from threading import Thread
-from threading import Event
-from gattlib import GATTRequester
-from gattlib import DiscoveryService
-from gattlib import EddystoneService
-import paho.mqtt.client as mqtt
 
-from eddystone_device import EddystoneDevice
-import ibeacon_device
+import getopt, sys
 
-VERSION = '0.1.0-3'
+DBUS_OBJ_MAN = 'org.freedesktop.DBus.ObjectManager'
+DBUS_PROPS = 'org.freedesktop.DBus.Properties'
 
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+BLUEZ = 'org.bluez'
+BLUEZ_ADAPTER = 'org.bluez.Adapter1'
+BLUEZ_DEVICE = 'org.bluez.Device1'
+BLUEZ_GATTSERV = 'org.bluez.GattService1'
+BLUEZ_GATTCHAR = 'org.bluez.GattCharacteristic1'
 
-config = None
-for loc in os.curdir, os.path.expanduser('~'), '/etc/thingsboard':
+loop    = None
+timer   = None
+scanner = None
+
+def usage():
+    print('Usage:')
+    print('  gw_dbus.py [options]')
+    print('Options:')
+    print('  -h, --help                Show help')
+    print('  -i, --adapter=hciX        Specify local adapter interface')
+
+def parse_options():
+    global adapter
+    global daemon
+    
     try:
-        with open(os.path.join(loc,'config.yaml'), 'r') as stream:
-            try:
-                config = yaml.load(stream, Loader=yaml.FullLoader)
-                break
-            except yaml.YAMLError as exc:
-                logging.error(exc)
-                quit()
-    except IOError as exc:
-        logging.error(exc)
+        opts, args = getopt.getopt(sys.argv[1:], "dhi:", ["help", "adapter="])
+    except getopt.GetoptError as err:
+        # print help information and exit:
+        print(err)  # will print something like "option -a not recognized"
+        usage()
+        sys.exit(2)
+    adapter = "hci0"
+    for o, a in opts:
+        if o in ('-d', '--daemon'):
+            daemon = True
+        elif o in ("-h", "--help"):
+            usage()
+            sys.exit()
+        elif o in ("-i", "--adapter"):
+            adapter = a
+        else:
+            assert False, "unhandled option"
 
-if config == None:
-    logging.error('No valid configuration found.')
-    quit()
+def new_device_cb(adapter, address, frametype, power, url):
+    global devices
+    logging.info('Found new device: {} with \'{}\''.format(address, url))
+    if url == 'http://www.afarcloud.eu/':
+        device = dbluez.Device(adapter, address, frametype, power, url)
+        afcdev = parser.Thingsboard(device)
+        if address not in devices.keys():
+            devices[address] = afcdev
+            #afcdev.startSynchronization()
 
-BEACON_UUID = config['beacon']['uuid']
-BEACON_TIMEOUT = config['beacon']['timeout']
-THINGSBOARD_HOST = config['thingsboard']['host']
-THINGSBOARD_PORT = config['thingsboard']['port']
-ACCESS_TOKEN = config['thingsboard']['access_token']
-SENSOR_HANDLES = config['sensor']['handles']
-HCI_DEVICE = config['hci']
+def quit():
+    global loop
+    global scanner
+    global timer
 
-def on_connect(mqttc, obj, flags, rc):
-    logging.info('rc: {}'.format(str(rc)))
+    def sync():
+        GLib.source_remove(timer)
 
-def on_message(mqttc, obj, msg):
-    logging.info('{} {} {}'.format(msg.topic, msg.qos, msg.payload))
-    # Decode JSON request
-    data = json.loads(msg.payload)
-    # Check request method
-    if data['method'] == 'checkStatus':
-        # Reply with GPIO status
-        mqttc.publish(msg.topic.replace('request', 'response'), json.dumps(tmp), 1)
-    elif data['method'] == 'setValue':
-        # Update GPIO status and reply
-        tmp['value'] = data['params']
-        mqttc.publish(msg.topic.replace('request', 'response'), json.dumps(tmp), 1)
-        mqttc.publish('v1/devices/me/attributes', json.dumps(tmp), 1)
-        if data['params'] == 'reboot':
-            Thread(target = reboot).start()
-        elif data['params'] == 'poweroff':
-            Thread(target = poweroff).start()
+        lock = Lock()
+        logging.info('Scan timeout')
+        for address in devices.keys():
+            lock.acquire()
+            devices[address].startSynchronization(lock)
 
-def on_publish(mqttc, obj, mid):
-    logging.info('mid: {}'.format(str(mid)))
 
-def on_subscribe(mqttc, obj, mid, granted_qos):
-    logging.info('Subscribed: {} {}'.format(str(mid), str(granted_qos)))
+        if len(devices) > 0:
+            logging.info('Waiting for sync to be finished')
+            lock.acquire()
+            logging.info('Sync finished')
+        loop.quit()
 
-def on_log(mqttc, obj, level, string):
-    logging.info(string)
+    thread = threading.Thread(target=sync)
+    thread.daemon = True
+    thread.start()
 
-def ip_info_msg():
-    s = 0;
-    sensor_data = {'id': '127.0.0.1'} 
+def main():
+    global running
+    global mutex
+    global args
+    global adapter
+    global devices
+    global loop
+    global scanner
+    global timer
+    
+    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+    
+    parse_options()
+    
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    
+    devices = {}
+
+    scanner = dbluez.Scanner(adapter, new_device_cb)
+    scanner.startScan()
+    
+    mutex = Lock()
+    GLib.threads_init()
+    timer = GLib.timeout_add(5000, quit)
+    loop = GLib.MainLoop()
+    running = True
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        sensor_data['id'] = s.getsockname()[0]
-    except:
-        sensor_data['id'] = '127.0.0.1'
-    finally:
-        s.close()
-    return sensor_data
+        loop.run()
+    except KeyboardInterrupt:
+        logging.info('Interrupted via keyboard')
+    
 
-tmp = {'method': 'checkStatus', 'value': True}
+    scanner.stopScan()
+    for address in devices.keys():
+        devices[address].removeDevice()
 
-# Connect to ThingsBoard using default MQTT port and 60 seconds keepalive interval
+    running = False
+    logging.info('Exit')
 
-# If you want to use a specific client id, use
-# mqttc = mqtt.Client('client-id')
-# but note that the client id must be unique on the broker. Leaving the client
-# id parameter empty will generate a random id for you.
-mqttc = mqtt.Client()
-mqttc.username_pw_set(ACCESS_TOKEN)
-
-mqttc.on_message = on_message
-mqttc.on_connect = on_connect
-mqttc.on_publish = on_publish
-mqttc.on_subscribe = on_subscribe
-
-# Uncomment to enable debug messages
-mqttc.on_log = on_log
-mqttc.connect(THINGSBOARD_HOST, THINGSBOARD_PORT, 60)
-mqttc.loop_start()
-time.sleep(1)
-
-#service = BeaconService()
-eddystone_service = EddystoneService(HCI_DEVICE)
-#discovery_service = DiscoveryService("hci1")
-
-# Subscribing to receive RPC requests
-mqttc.subscribe('v1/devices/me/rpc/request/+')
-# Sending current status
-tmp['value'] = True;
-tmp['version'] = VERSION;
-mqttc.publish('v1/devices/me/attributes', json.dumps(tmp), 1)
-logging.info(json.dumps(tmp))
-# Sending id data to ThingsBoard
-mqttc.publish('v1/devices/me/telemetry', json.dumps(ip_info_msg()), 1)
-logging.info(json.dumps(ip_info_msg()))
-
-readers = {}
-
-try:
-    while True:
-        devices = eddystone_service.scan(2)
-        logging.info("Scanned for two seconds ..")
-        for address, data in list(devices.items()):
-            b = EddystoneDevice(mqttc, data, address, BEACON_TIMEOUT, HCI_DEVICE)
-            if b._url == 'http://www.afarcloud.eu/':
-                logging.info("AFC Eddystone URL found: {} ({})".format(b._address, b._url))
-                if address not in readers:
-                    readers[address] = b
-                if readers[address].state_connect == True:
-                    continue
-                if readers[address]._calibration == True:
-                    if (time.time() - readers[address].last_synced) > 60:
-                        try:
-                            readers[address].start(False)
-                        #del readers[address]
-                        #readers[address].start(True)
-                        #time.sleep(10)
-                        except Exception as e:
-                            logging.error(str(e))
-                    continue
-                if (time.time() - readers[address].last_synced) > 900:
-                    try:
-                        readers[address].start(False)
-                        #del readers[address]
-                        #readers[address].start(True)
-                        #time.sleep(10)
-                    except Exception as e:
-                        logging.error(str(e))
-        break
-        time.sleep(10)
-
-except KeyboardInterrupt:
-    pass
-
-except Exception as e:
-    logging.error(str(e))
-
-#loop_stop(force=False)
-for address, reader in readers.items():
-    reader.set_disconnect()
-
-mqttc.disconnect()
-logging.info('Done.')
+if __name__ == '__main__':
+    main()

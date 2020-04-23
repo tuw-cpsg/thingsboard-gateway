@@ -1,29 +1,36 @@
 # https://blog.alexellis.io/getting-started-with-docker-on-raspberry-pi/
 # docker run --net=host thingsboard_docker
 
-FROM schachr/raspbian-stretch:latest
+#FROM schachr/raspbian-stretch:latest
+FROM ubuntu:18.04
 ENTRYPOINT []
 
 RUN apt-get update && \
+	apt-get upgrade -y && \
     apt-get -qy install\
+	gettext-base \
+	dbus \
     curl \
+	cron \
     ca-certificates \
-    python3 python3-pip python3-requests python3-yaml python3-setuptools python3-dev \
-    bluez libbluetooth-dev \
-    pkg-config libglib2.0-dev libboost-thread-dev libboost-python-dev  \
+    python3 python3-requests python3-yaml python3-dbus python3-gi \
+    bluez \
     bc \
-    build-essential \
+	mosquitto-clients \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-ADD pygattlib /opt/
-
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install pybluez paho-mqtt
-RUN python3 /opt/pygattlib/setup.py build
-RUN python3 /opt/pygattlib/setup.py install
+RUN mkdir -p /usr/lib/python3.6/dbluez
+RUN mkdir -p /usr/lib/python3.6/parser
 
 ADD gateway.py /opt/thingsboard/gateway.py
 ADD config.yaml /etc/thingsboard/config.yaml
 
-CMD ["/opt/thingsboard/gateway.py"]
+ADD dbluez.py /usr/lib/python3.6/dbluez/__init__.py
+ADD parser.py /usr/lib/python3.6/parser/__init__.py
+
+RUN touch /var/log/cron.log
+ADD crontab /etc/cron.d/thingsboard_gateway
+
+CMD /bin/sh -c "envsubst < /etc/cron.d/thingsboard_gateway | crontab && /usr/sbin/cron -f"
+#CMD ["/usr/sbin/cron", "-f"]

@@ -12,27 +12,25 @@ apt-get install docker.io
 In order to install the gateway docker image, you need to create/modify a config file, build and run the docker image.
 ## Config
 ```
-cat > config.yaml << EOF
-beacon:
-    uuid: 12345678-1234-1234-1234-123456789abc
-    timeout: 90
-thingsboard:
-    host: tba.tba.tba
-    port: 1883
-    access_token: TBA
-sensor:
-    handles:
-        00002a19-0000-1000-8000-00805f9b34fb: 'battery'
-        00002a6e-0000-1000-8000-00805f9b34fb: 'temperature'
+cat > config << EOF
+MQTT_HOST=tba.tba.tba
+MQTT_PORT=1883
+MQTT_PATH=path/to/publish
+MQTT_USER=TBA
 EOF
 ```
 ## Docker Image
 ### Build
-```
-docker build -t thingsboard-gateway .
+```bash
+docker build -t thingsboard_gateway .
 ```
 ### Run
 Run it, autostart enabled:
+```bash
+docker run -d --env-file config --privileged -v /var/run/dbus:/var/run/dbus thingsboard_gateway:latest
 ```
-docker run --net=host --restart=always --privileged --name thingsboard-gateway thingsboard-gateway:latest &
+### docker-compose
+Alternatively, you can use docker-compose to build and run the docker image in the background:
+```bash
+docker-compose up -d
 ```
