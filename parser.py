@@ -89,6 +89,7 @@ class Thingsboard:
     mutex = Lock()
     
     def __init__(self, device):
+        self._logger = logging.getLogger('{}[{}]'.format(__name__, device.getAddress()))
         self._device = device
         self._cv  = Condition()
         
@@ -103,10 +104,22 @@ class Thingsboard:
         None
         
     def startSynchronization(self, lock = None):
+        self._logger.debug('Start synchronization')
         self._lock = lock
-        logging.info('Connecting to remote device')
-        self._device.connect(self.discoveryComplete)
-        logging.info('Waiting for service discovery to be completed')
+        self._device.connect(self.disconnect_cb, self.discoveryComplete)
+
+    def endSynchronization(self):
+        self._logger.debug('End synchronization')
+        self.synchronizeTime()
+        self._char_sig_rcv.remove()
+
+        self._device.disconnect()
+
+        if len(self.jdata[self._device._address]) > 0:
+            print('{}'.format(json.dumps(self.jdata)), flush=True)
+        
+        self._lock.release()
+        self._lock = None
 
     def synchronizeTime(self):
         utctime = datetime.utcnow()
@@ -114,21 +127,34 @@ class Thingsboard:
                                    utctime.year, utctime.month, utctime.day,
                                    utctime.hour, utctime.minute, utctime.second,
                                    0, int(utctime.microsecond/3906.25), 0)
-        logging.info('Writing time info to remote CTS')
+        self._logger.info('Writing time info to remote CTS')
         self._cts.WriteValue(bt_date_time, {})
 
     def removeDevice(self):
         self._device.remove()
     
+    def disconnect_cb(self, is_connected):
+        self._logger.info('Disconnect callback: {}'.format(is_connected))
+
+        if is_connected == False:
+            try:
+                self._device.disconnect()
+            except Exception as e:
+                self._logg.error('Error disconnecting from device: {}'.format(e))
+
+            if self._lock != None:
+                self._lock.release()
+                self._lock = None
+
     def discoveryComplete(self):        
-        logging.info('Discovery completed')
+        self._logger.info('Discovery completed')
         self._ccv = True
         self._afc_descriptors = {}
         self._sc_cccd = None
         self._cts = None
 
         if GEN_CTS_CT_UUID in self._device.characteristics: 
-            logging.info('Found CTS')
+            self._logger.info('Found CTS')
             self._cts = self._device.characteristics[GEN_CTS_CT_UUID]
         
         if AFC_GSC_UUID in self._device.characteristics:
@@ -143,63 +169,62 @@ class Thingsboard:
                         
             if self._sc_cccd != None:
                 self._char_sig_rcv = dbluez.GetPropertiesChangedCb(characteristic, self.indication_cb)
-                logging.info('Start notifications/indications')
+                self._logger.info('Start notifications/indications')
                 #flags = dbluez.GetDescriptorProperty(self._sc_cccd, 'Flags')
-                #logging.info('Flags of CCCD: {}'.format(flags))
+                #self._logger.info('Flags of CCCD: {}'.format(flags))
                 #self._sc_cccd.ReadValue({})
                 characteristic.StartNotify()
                 #self._sc_cccd.WriteValue(bytes([0x02]), {})
             
         else:
-            logging.info('Disconnecting from remote device')
+            self._logger.info('No service found to synchronize, disconnecting')
             self._device.disconnect()
+            self._logger.debug('Release lock')
+            if self._lock != None:
+                self._lock.release()
+                self._lock = None
     
     def indication_cb(self, properties, changed_props, invalidated_props):
-        if 'Value' not in changed_props:
-            return
-        
-        data = bytes(changed_props['Value'])
-        logging.info('Received {} bytes of data: {}'.format(len(data), data))
-        
-        if data == b'\x00':
-            logging.info('Finished data receiption.')
-            self.synchronizeTime()
-            self._char_sig_rcv.remove()
-            logging.info('Disconnecting from remote device')
-            self._device.disconnect()
-            if len(self.jdata[self._device._address]) > 0:
-                print('{}'.format(json.dumps(self.jdata)), flush=True)
-            self._lock.release()
-            self._lock = None
-            return
-        
-        ts = int(round(time.time() * 1000))
-        jdata = {}
-        
-        offset = 1
-        dataset_cnt = data[0]
-        for x in range(0, dataset_cnt):
-            for desc in self._afc_descriptors.values():
-                if desc == dbluez.BLE_GATT_CCCD:
-                    continue
-                
-                if desc == AFC_TIMESTAMP_UUID:
-                    ts = (struct.unpack_from('<I', data, offset)[0] * 1000)
-                    offset = offset + 4;
-                    continue
-                
-                if desc == AFC_SOIL_HUMIDITY_L_UUID:
-                    self._calibration = True
-                    
-                jdata[AFC_SYNC_DATA[desc]['name']] = \
-                    (struct.unpack_from(AFC_SYNC_DATA[desc]['type'], data, offset)[0]) \
-                    * AFC_SYNC_DATA[desc]['multiplicator'] 
-                offset = offset + AFC_SYNC_DATA[desc]['size']
-
-            self.jdata[self._device._address].append({'ts': ts, 'values': jdata})
-
-            logging.info('Data count in JSON: {}'.format(len(self.jdata[self._device._address])))
-            if len(self.jdata[self._device._address]) > 4:
-                print('{}'.format(json.dumps(self.jdata)), flush=True)
-                self.jdata = {self._device._address: [] }
+        if 'Value' in changed_props:
+            data = bytes(changed_props['Value'])
+            self._logger.info('Received {} bytes of data: {}'.format(len(data), data))
             
+            if data == b'\x00':
+                self.endSynchronization()
+                return
+            
+            ts = int(round(time.time() * 1000))
+            
+            offset = 1
+            dataset_cnt = data[0]
+            for x in range(0, dataset_cnt):
+                jdata = {}
+                for desc in self._afc_descriptors.values():
+                    if desc == dbluez.BLE_GATT_CCCD:
+                        continue
+                    
+                    if desc == AFC_TIMESTAMP_UUID:
+                        ts = (struct.unpack_from('<I', data, offset)[0] * 1000)
+                        offset = offset + 4;
+                        continue
+                    
+                    if desc == AFC_SOIL_HUMIDITY_L_UUID:
+                        self._calibration = True
+                        
+                    jdata[AFC_SYNC_DATA[desc]['name']] = \
+                        (struct.unpack_from(AFC_SYNC_DATA[desc]['type'], data, offset)[0]) \
+                        * AFC_SYNC_DATA[desc]['multiplicator'] 
+                    offset = offset + AFC_SYNC_DATA[desc]['size']
+
+                self.jdata[self._device._address].append({'ts': ts, 'values': jdata})
+
+                self._logger.info('Data count in JSON: {}'.format(len(self.jdata[self._device._address])))
+                if len(self.jdata[self._device._address]) > 4:
+                    print('{}'.format(json.dumps(self.jdata)), flush=True)
+                    self.jdata = {self._device._address: [] }
+                
+        if 'Notifying' in changed_props:
+            self._logger.debug('Received notifying')
+
+        if 'Value' not in changed_props and 'Notifying' not in changed_props:
+            self._logger.info('Unknown changed properties: {}'.format(changed_props))

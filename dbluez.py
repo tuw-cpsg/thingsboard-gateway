@@ -45,6 +45,7 @@ class Scanner:
     def __init__(self, adapter, new_device_cb):
         self._adapter = adapter
         self._path = '/org/bluez/{}'.format(adapter)
+        self._logger = logging.getLogger(__name__)
         
         self._sysbus = dbus.SystemBus()
         self._bluez = dbus.Interface(self._sysbus.get_object(BLUEZ, '/'), DBUS_OBJ_MAN)
@@ -97,7 +98,7 @@ class Scanner:
                 self._rem_dev_cb(path)
     
     def _on_prop_changed(self, properties, changed_props, invalidated_props):
-        logging.info('Changed properties: {}'.format(changed_props))
+        self._logger.info('Changed properties: {}'.format(changed_props))
     
     def startScan(self):
         self._adapterobj.SetDiscoveryFilter({
@@ -111,11 +112,13 @@ class Scanner:
 
 class Device:
     def __init__(self, adapter, address, frametype, power, url):
+        self._logger  = logging.getLogger('{}[{}]'.format(__name__, address))
         self._adapter = adapter
         self._address = address
         self._frametype = frametype
         self._power   = power
         self._url     = url
+        self._sig_recv = None
         
         self._path = '/org/bluez/{}/dev_{}'.format(adapter, address.replace(':', '_'))
         
@@ -130,8 +133,16 @@ class Device:
         #self._adapterobj.RemoveDevice(self._path)
 
     def _on_prop_changed(self, properties, changed_props, invalidated_props):
-        logging.info('Changed properties: {}'.format(changed_props))
-        if changed_props.get('ServicesResolved', False):
+        self._logger.debug('Changed properties: {}'.format(changed_props))
+
+        if 'Connected' in changed_props:
+            is_connected = bool(changed_props['Connected'])
+            self._logger.debug('Connect property changed: {}'.format(is_connected))
+            if is_connected == False:
+                self._disconnect_cb(bool(changed_props['Connected']))
+                return
+
+        if 'ServicesResolved' in changed_props:
             self._probe_services()
 
     def _probe_services(self):
@@ -155,15 +166,26 @@ class Device:
         if self._discovery_cb != None:
             self._discovery_cb()
 
-    def connect(self, services_discovered_cb = None):
+    def connect(self, disconnect_cb = None, services_discovered_cb = None):
+        self._logger.debug('Connecting')
         self._discovery_cb = services_discovered_cb
-        self._device.Connect()
-        device_props = dbus.Interface(self._device, DBUS_PROPS)
-        self._sig_recv = device_props.connect_to_signal('PropertiesChanged', lambda *args: self._on_prop_changed(*args))
+        self._disconnect_cb = disconnect_cb
+        try:
+            self._device.Connect()
+            device_props = dbus.Interface(self._device, DBUS_PROPS)
+            self._sig_recv = device_props.connect_to_signal('PropertiesChanged', lambda *args: self._on_prop_changed(*args))
+        except Exception as e:
+            self._logger.error('Error while connecting: {}'.format(e))
+            self._disconnect_cb(False)
 
     def disconnect(self):
-        self._sig_recv.remove()
+        self._logger.debug('Disconnecting')
+        if self._sig_recv != None:
+            self._sig_recv.remove()
         self._device.Disconnect()
         
     def remove(self):
         self._adapterobj.RemoveDevice(self._path)
+
+    def getAddress(self):
+        return self._address

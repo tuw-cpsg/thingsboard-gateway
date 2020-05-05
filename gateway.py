@@ -31,7 +31,7 @@ scanner = None
 
 def usage():
     print('Usage:')
-    print('  gw_dbus.py [options]')
+    print('  gateway.py [options]')
     print('Options:')
     print('  -h, --help                Show help')
     print('  -i, --adapter=hciX        Specify local adapter interface')
@@ -60,78 +60,97 @@ def parse_options():
             assert False, "unhandled option"
 
 def new_device_cb(adapter, address, frametype, power, url):
+    global logger
+    global addresses_to_process
     global devices
-    logging.info('Found new device: {} with \'{}\''.format(address, url))
+    logger.info('Found new device: {} with \'{}\''.format(address, url))
     if url == 'http://www.afarcloud.eu/':
         device = dbluez.Device(adapter, address, frametype, power, url)
         afcdev = parser.Thingsboard(device)
+        if address not in addresses_to_process:
+            addresses_to_process.append(address)
         if address not in devices.keys():
             devices[address] = afcdev
-            #afcdev.startSynchronization()
 
 def quit():
+    global logger
     global loop
     global scanner
     global timer
+    global devices
+    global addresses_to_process
+    global lock
 
     def sync():
-        GLib.source_remove(timer)
 
-        lock = Lock()
-        logging.info('Scan timeout')
-        for address in devices.keys():
+        if len(addresses_to_process) > 0:
+            address = addresses_to_process.pop()
             lock.acquire()
             devices[address].startSynchronization(lock)
 
+            thread = threading.Thread(target=sync)
+            thread.daemon = True
+            thread.start()
 
-        if len(devices) > 0:
-            logging.info('Waiting for sync to be finished')
+        elif len(devices) > 0:
+            logger.info('Waiting for last device to finish')
             lock.acquire()
-            logging.info('Sync finished')
-        loop.quit()
+            logger.info('Finished')
+            lock.release()
+
+            loop.quit()
+
+        elif len(devices) == 0:
+            loop.quit()
+
+    lock = Lock()
+    logger.info('Scan timeout')
+
+    GLib.source_remove(timer)
 
     thread = threading.Thread(target=sync)
     thread.daemon = True
     thread.start()
 
 def main():
-    global running
-    global mutex
     global args
     global adapter
     global devices
+    global addresses_to_process
     global loop
     global scanner
     global timer
+    global logger
     
     logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
     
     parse_options()
     
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     
+    addresses_to_process = []
     devices = {}
 
     scanner = dbluez.Scanner(adapter, new_device_cb)
     scanner.startScan()
     
-    mutex = Lock()
     GLib.threads_init()
     timer = GLib.timeout_add(5000, quit)
     loop = GLib.MainLoop()
-    running = True
     try:
         loop.run()
     except KeyboardInterrupt:
-        logging.info('Interrupted via keyboard')
-    
+        logger.info('Interrupted via keyboard')
 
     scanner.stopScan()
     for address in devices.keys():
-        devices[address].removeDevice()
+        try:
+            devices[address].removeDevice()
+        except Exception as e:
+            None
 
-    running = False
-    logging.info('Exit')
+    logger.info('Exit')
 
 if __name__ == '__main__':
     main()
