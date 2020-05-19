@@ -25,9 +25,10 @@ BLUEZ_DEVICE = 'org.bluez.Device1'
 BLUEZ_GATTSERV = 'org.bluez.GattService1'
 BLUEZ_GATTCHAR = 'org.bluez.GattCharacteristic1'
 
-loop    = None
-timer   = None
-scanner = None
+loop      = None
+timer     = None
+scanner   = None
+log_level = None
 
 def usage():
     print('Usage:')
@@ -39,6 +40,7 @@ def usage():
 def parse_options():
     global adapter
     global daemon
+    global log_level
     
     try:
         opts, args = getopt.getopt(sys.argv[1:], "dhi:", ["help", "adapter="])
@@ -47,15 +49,18 @@ def parse_options():
         print(err)  # will print something like "option -a not recognized"
         usage()
         sys.exit(2)
-    adapter = "hci0"
+    adapter = 'hci0'
+    log_level = logging.INFO
     for o, a in opts:
-        if o in ('-d', '--daemon'):
-            daemon = True
-        elif o in ("-h", "--help"):
+        if o in ('-h', '--help'):
             usage()
             sys.exit()
-        elif o in ("-i", "--adapter"):
+        elif o in ('-d', '--daemon'):
+            daemon = True
+        elif o in ('-i', '--adapter'):
             adapter = a
+        elif o in ('-V', '--verbose'):
+            log_level = logging.DEBUG
         else:
             assert False, "unhandled option"
 
@@ -121,11 +126,12 @@ def main():
     global scanner
     global timer
     global logger
-    
-    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
+    global log_level
     
     parse_options()
+
+    logging.basicConfig(stream=sys.stderr, level=log_level)
+    logger = logging.getLogger(__name__)
     
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     

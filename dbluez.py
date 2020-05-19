@@ -9,6 +9,8 @@ import dbus.mainloop.glib
 from gi.repository import GLib
 import logging
 
+import time
+
 DBUS_OBJ_MAN   = 'org.freedesktop.DBus.ObjectManager'
 DBUS_PROPS     = 'org.freedesktop.DBus.Properties'
 
@@ -119,6 +121,7 @@ class Device:
         self._power   = power
         self._url     = url
         self._sig_recv = None
+        self._connect_time = 0
         
         self._path = '/org/bluez/{}/dev_{}'.format(adapter, address.replace(':', '_'))
         
@@ -174,6 +177,7 @@ class Device:
             self._device.Connect()
             device_props = dbus.Interface(self._device, DBUS_PROPS)
             self._sig_recv = device_props.connect_to_signal('PropertiesChanged', lambda *args: self._on_prop_changed(*args))
+            self._connect_time = time.time()
         except Exception as e:
             self._logger.error('Error while connecting: {}'.format(e))
             self._disconnect_cb(False)
@@ -183,6 +187,8 @@ class Device:
         if self._sig_recv != None:
             self._sig_recv.remove()
         self._device.Disconnect()
+        if self._connect_time > 0:
+            self._logger.info('Disconnected. Connected time: {} s'.format(time.time() - self._connect_time))
         
     def remove(self):
         self._adapterobj.RemoveDevice(self._path)

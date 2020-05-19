@@ -104,11 +104,15 @@ class Thingsboard:
         None
         
     def startSynchronization(self, lock = None):
-        self._logger.debug('Start synchronization')
+        self._logger.info('Start synchronization')
         self._lock = lock
         self._device.connect(self.disconnect_cb, self.discoveryComplete)
+        self._sync_cnt = 0
+        self._byte_cnt = 0
+        self._ind_cnt  = 0
 
     def endSynchronization(self):
+        dis_time = time.time()
         self._logger.debug('End synchronization')
         self.synchronizeTime()
         self._char_sig_rcv.remove()
@@ -117,6 +121,8 @@ class Thingsboard:
 
         if len(self.jdata[self._device._address]) > 0:
             print('{}'.format(json.dumps(self.jdata)), flush=True)
+
+        self._logger.info('Received {} data sets ({} bytes) with {} indications in {}s'.format(self._sync_cnt, self._byte_cnt, self._ind_cnt, dis_time - self._indication_started))
         
         self._lock.release()
         self._lock = None
@@ -127,7 +133,7 @@ class Thingsboard:
                                    utctime.year, utctime.month, utctime.day,
                                    utctime.hour, utctime.minute, utctime.second,
                                    0, int(utctime.microsecond/3906.25), 0)
-        self._logger.info('Writing time info to remote CTS')
+        self._logger.debug('Writing time info to remote CTS')
         self._cts.WriteValue(bt_date_time, {})
 
     def removeDevice(self):
@@ -170,14 +176,11 @@ class Thingsboard:
             if self._sc_cccd != None:
                 self._char_sig_rcv = dbluez.GetPropertiesChangedCb(characteristic, self.indication_cb)
                 self._logger.info('Start notifications/indications')
-                #flags = dbluez.GetDescriptorProperty(self._sc_cccd, 'Flags')
-                #self._logger.info('Flags of CCCD: {}'.format(flags))
-                #self._sc_cccd.ReadValue({})
+                self._indication_started = time.time()
                 characteristic.StartNotify()
-                #self._sc_cccd.WriteValue(bytes([0x02]), {})
             
         else:
-            self._logger.info('No service found to synchronize, disconnecting')
+            self._logger.warning('No service found to synchronize, disconnecting')
             self._device.disconnect()
             self._logger.debug('Release lock')
             if self._lock != None:
@@ -187,16 +190,19 @@ class Thingsboard:
     def indication_cb(self, properties, changed_props, invalidated_props):
         if 'Value' in changed_props:
             data = bytes(changed_props['Value'])
-            self._logger.info('Received {} bytes of data: {}'.format(len(data), data))
+            self._logger.debug('Received {} bytes of data'.format(len(data), data))
             
             if data == b'\x00':
                 self.endSynchronization()
                 return
             
+            self._ind_cnt = self._ind_cnt + 1
             ts = int(round(time.time() * 1000))
             
             offset = 1
             dataset_cnt = data[0]
+            self._sync_cnt = self._sync_cnt + dataset_cnt
+            self._byte_cnt = self._byte_cnt + len(data)
             for x in range(0, dataset_cnt):
                 jdata = {}
                 for desc in self._afc_descriptors.values():
@@ -218,7 +224,7 @@ class Thingsboard:
 
                 self.jdata[self._device._address].append({'ts': ts, 'values': jdata})
 
-                self._logger.info('Data count in JSON: {}'.format(len(self.jdata[self._device._address])))
+                self._logger.debug('Data count in JSON: {}'.format(len(self.jdata[self._device._address])))
                 if len(self.jdata[self._device._address]) > 4:
                     print('{}'.format(json.dumps(self.jdata)), flush=True)
                     self.jdata = {self._device._address: [] }
@@ -227,4 +233,4 @@ class Thingsboard:
             self._logger.debug('Received notifying')
 
         if 'Value' not in changed_props and 'Notifying' not in changed_props:
-            self._logger.info('Unknown changed properties: {}'.format(changed_props))
+            self._logger.warning('Unknown changed properties: {}'.format(changed_props))
