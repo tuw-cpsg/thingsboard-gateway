@@ -146,7 +146,7 @@ class Thingsboard:
             try:
                 self._device.disconnect()
             except Exception as e:
-                self._logg.error('Error disconnecting from device: {}'.format(e))
+                self._logger.error('Error disconnecting from device: {}'.format(e))
 
             if self._lock != None:
                 self._lock.release()
