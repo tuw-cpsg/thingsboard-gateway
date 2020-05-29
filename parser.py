@@ -24,6 +24,8 @@ AFC_BATTERY_VOLTAGE_UUID    = '8fee2919-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_HUMIDITY_L_UUID    = '8fee29a1-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_HUMIDITY_H_UUID    = '8fee29a2-3c17-4189-8556-a293fa6b2739'
 
+AFC_ACTUATOR_OUT_UUID       = '8fee29a3-3c17-4189-8556-a293fa6b2739'
+
 GEN_CTS_UUID                = '00001805-0000-1000-8000-00805f9b34fb'
 GEN_CTS_CT_UUID             = '00002a2b-0000-1000-8000-00805f9b34fb'
 
@@ -82,6 +84,12 @@ AFC_SYNC_DATA = {
         'type': '<H',
         'multiplicator': 1
     },
+    AFC_ACTUATOR_OUT_UUID: {
+        'name': 'actuator_out',
+        'size': 1,
+        'type': '<B',
+        'multiplicator': 1
+    }
 }
 
 class Thingsboard:
@@ -115,6 +123,7 @@ class Thingsboard:
         dis_time = time.time()
         self._logger.debug('End synchronization')
         self.synchronizeTime()
+        cts_time = time.time()
         self._char_sig_rcv.remove()
 
         self._device.disconnect()
@@ -122,7 +131,7 @@ class Thingsboard:
         if len(self.jdata[self._device._address]) > 0:
             print('{}'.format(json.dumps(self.jdata)), flush=True)
 
-        self._logger.info('Received {} data sets ({} bytes) with {} indications in {}s'.format(self._sync_cnt, self._byte_cnt, self._ind_cnt, dis_time - self._indication_started))
+        self._logger.info('Received {} data sets ({} bytes) with {} indications in {} s ({} {})'.format(self._sync_cnt, self._byte_cnt, self._ind_cnt, dis_time - self._indication_started, cts_time - dis_time, time.time() - dis_time))
         
         self._lock.release()
         self._lock = None
