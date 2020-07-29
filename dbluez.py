@@ -173,14 +173,18 @@ class Device:
         self._logger.debug('Connecting')
         self._discovery_cb = services_discovered_cb
         self._disconnect_cb = disconnect_cb
-        try:
-            self._device.Connect()
-            device_props = dbus.Interface(self._device, DBUS_PROPS)
-            self._sig_recv = device_props.connect_to_signal('PropertiesChanged', lambda *args: self._on_prop_changed(*args))
-            self._connect_time = time.time()
-        except Exception as e:
-            self._logger.error('Error while connecting: {}'.format(e))
-            self._disconnect_cb(False)
+        for x in range(0, 3):
+            try:
+                self._device.Connect()
+                device_props = dbus.Interface(self._device, DBUS_PROPS)
+                self._sig_recv = device_props.connect_to_signal('PropertiesChanged', lambda *args: self._on_prop_changed(*args))
+                self._connect_time = time.time()
+                return
+            except Exception as e:
+                self._logger.error('Error while connecting: {}'.format(e))
+                time.sleep(5)
+        self._logger.error('Error connecting 3 consequitve times. Aborting..')
+        self._disconnect_cb(False)
 
     def disconnect(self):
         self._logger.debug('Disconnecting')
