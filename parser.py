@@ -26,6 +26,9 @@ AFC_SOIL_HUMIDITY_H_UUID    = '8fee29a2-3c17-4189-8556-a293fa6b2739'
 
 AFC_ACTUATOR_OUT_UUID       = '8fee29a3-3c17-4189-8556-a293fa6b2739'
 
+AFC_ANS_UUID                = '8fee1805-3c17-4189-8556-a293fa6b2739'
+AFC_ANS_NNC_UUID            = '8fee2a31-3c17-4189-8556-a293fa6b2739'
+
 GEN_CTS_UUID                = '00001805-0000-1000-8000-00805f9b34fb'
 GEN_CTS_CT_UUID             = '00002a2b-0000-1000-8000-00805f9b34fb'
 
@@ -103,7 +106,8 @@ class Thingsboard:
         
         self._ccv = False
         
-        self.jdata = {self._device._address: [] }
+        self._node_name = None
+        self._jdata = []
         
     def __enter__(self):
         None
@@ -126,10 +130,11 @@ class Thingsboard:
         cts_time = time.time()
         self._char_sig_rcv.remove()
 
+
         self._device.disconnect()
 
-        if len(self.jdata[self._device._address]) > 0:
-            print('{}'.format(json.dumps(self.jdata)), flush=True)
+        if len(self._jdata) > 0:
+            print('{}'.format(json.dumps({self._node_name: self._jdata})), flush=True)
 
         self._logger.info('Received {} data sets ({} bytes) with {} indications in {} s ({} {})'.format(self._sync_cnt, self._byte_cnt, self._ind_cnt, dis_time - self._indication_started, cts_time - dis_time, time.time() - dis_time))
         
@@ -144,6 +149,14 @@ class Thingsboard:
                                    0, int(utctime.microsecond/3906.25), 0)
         self._logger.debug('Writing time info to remote CTS')
         self._cts.WriteValue(bt_date_time, {})
+
+    def getNodeName(self):
+        if self._nnc == None:
+            return self._device._address
+
+        self._logger.info('Getting remote device name')
+        return bytes(self._nnc.ReadValue({})).decode("utf-8")
+        
 
     def removeDevice(self):
         self._device.remove()
@@ -166,7 +179,14 @@ class Thingsboard:
         self._ccv = True
         self._afc_descriptors = {}
         self._sc_cccd = None
+        self._nnc = None
         self._cts = None
+
+        if AFC_ANS_NNC_UUID in self._device.characteristics:
+            self._logger.info('Found AFC node name characteristics')
+            self._nnc = self._device.characteristics[AFC_ANS_NNC_UUID]
+
+        self._node_name = self.getNodeName()
 
         if GEN_CTS_CT_UUID in self._device.characteristics: 
             self._logger.info('Found CTS')
@@ -231,12 +251,12 @@ class Thingsboard:
                         * AFC_SYNC_DATA[desc]['multiplicator'] 
                     offset = offset + AFC_SYNC_DATA[desc]['size']
 
-                self.jdata[self._device._address].append({'ts': ts, 'values': jdata})
+                self._jdata.append({'ts': ts, 'values': jdata})
 
-                self._logger.debug('Data count in JSON: {}'.format(len(self.jdata[self._device._address])))
-                if len(self.jdata[self._device._address]) > 4:
-                    print('{}'.format(json.dumps(self.jdata)), flush=True)
-                    self.jdata = {self._device._address: [] }
+                self._logger.debug('Data count in JSON: {}'.format(len(self._jdata)))
+                if len(self._jdata) > 4:
+                    print('{}'.format(json.dumps({self._node_name: self._jdata})), flush=True)
+                    self._jdata = []
                 
         if 'Notifying' in changed_props:
             self._logger.debug('Received notifying')
