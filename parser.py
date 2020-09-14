@@ -37,60 +37,70 @@ AFC_SYNC_DATA = {
         'name': 'timestamp',
         'size': 4,
         'type': '<I',
+        'precision': 0,
         'multiplicator': 1000
     },
     AFC_BATTERY_VOLTAGE_UUID: {
         'name': 'battery',
         'size': 2,
         'type': '<H',
+        'precision': 2,
         'multiplicator': 0.01
     },
     AFC_SOIL_TEMPERATURE_UUID: {
         'name': 'temperature',
         'size': 2,
         'type': '<h',
+        'precision': 2,
         'multiplicator': 0.01
     },
     AFC_SOIL_HUMIDITY_UUID: {
         'name': 'moisture',
         'size': 2,
         'type': '<H',
+        'precision': 2,
         'multiplicator': 0.01
     },
     AFC_AMB_TEMPERATURE_UUID: {
         'name': 'temperature',
         'size': 2,
         'type': '<h',
+        'precision': 2,
         'multiplicator': 0.01
     },
     AFC_AMB_HUMDITY_UUID: {
         'name': 'humidity',
         'size': 2,
         'type': '<H',
+        'precision': 2,
         'multiplicator': 0.01
     },
     AFC_ATM_PRESSURE_UUID: {
         'name': 'pressure',
         'size': 4,
         'type': '<I',
+        'precision': 3,
         'multiplicator': 0.001
     },
     AFC_SOIL_HUMIDITY_L_UUID: {
         'name': 'moisture_low',
         'size': 2,
         'type': '<H',
+        'precision': 0,
         'multiplicator': 1
     },
     AFC_SOIL_HUMIDITY_H_UUID: {
         'name': 'moisture_high',
         'size': 2,
         'type': '<H',
+        'precision': 0,
         'multiplicator': 1
     },
     AFC_ACTUATOR_OUT_UUID: {
         'name': 'actuator_out',
         'size': 1,
         'type': '<B',
+        'precision': 0,
         'multiplicator': 1
     }
 }
@@ -246,9 +256,9 @@ class Thingsboard:
                     if desc == AFC_SOIL_HUMIDITY_L_UUID:
                         self._calibration = True
                         
-                    jdata[AFC_SYNC_DATA[desc]['name']] = \
+                    jdata[AFC_SYNC_DATA[desc]['name']] = round( \
                         (struct.unpack_from(AFC_SYNC_DATA[desc]['type'], data, offset)[0]) \
-                        * AFC_SYNC_DATA[desc]['multiplicator'] 
+                        * AFC_SYNC_DATA[desc]['multiplicator'], AFC_SYNC_DATA[desc]['precision'])
                     offset = offset + AFC_SYNC_DATA[desc]['size']
 
                 self._jdata.append({'ts': ts, 'values': jdata})
