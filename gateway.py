@@ -15,6 +15,7 @@ from threading import Lock
 import time
 
 import getopt, sys
+import pickle
 
 DBUS_OBJ_MAN = 'org.freedesktop.DBus.ObjectManager'
 DBUS_PROPS = 'org.freedesktop.DBus.Properties'
@@ -43,7 +44,7 @@ def parse_options():
     global log_level
     
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "dhi:", ["help", "adapter="])
+        opts, args = getopt.getopt(sys.argv[1:], "dhi:V", ["help", "adapter="])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -66,12 +67,19 @@ def parse_options():
 
 def new_device_cb(adapter, address, frametype, power, url):
     global logger
+    global addresses
     global addresses_to_process
     global devices
+    global t_started
+
     logger.info('Found new device: {} with \'{}\''.format(address, url))
     if url == 'http://www.afarcloud.eu/':
         device = dbluez.Device(adapter, address, frametype, power, url)
         afcdev = parser.Thingsboard(device)
+        if address in addresses:
+            if addresses[address]['last_sync'] + 3600 > t_started:
+                logger.debug('Device {} was synced within last {} seconds.'.format(address, 3600))
+                return
         if address not in addresses_to_process:
             addresses_to_process.append(address)
         if address not in devices.keys():
@@ -85,6 +93,8 @@ def quit():
     global devices
     global addresses_to_process
     global lock
+    global addresses
+    global t_started
 
     def sync():
 
@@ -92,6 +102,7 @@ def quit():
             address = addresses_to_process.pop()
             lock.acquire()
             devices[address].startSynchronization(lock)
+            addresses[address] = { 'last_sync': t_started }
 
             thread = threading.Thread(target=sync)
             thread.daemon = True
@@ -102,6 +113,9 @@ def quit():
             lock.acquire()
             logger.info('Finished')
             lock.release()
+
+            with open('devices.dict', 'wb') as device_dict_file:
+                pickle.dump(addresses, device_dict_file)
 
             loop.quit()
 
@@ -122,12 +136,17 @@ def main():
     global adapter
     global devices
     global addresses_to_process
+    global addresses
     global loop
     global scanner
     global timer
     global logger
     global log_level
+    global t_started
     
+    t_started = time.time()
+    t_started = int(t_started) - int(t_started) % 60
+
     parse_options()
 
     logging.basicConfig(stream=sys.stderr, level=log_level)
@@ -135,8 +154,16 @@ def main():
     
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     
+    addresses = {}
     addresses_to_process = []
     devices = {}
+
+    try:
+        with open('devices.dict', 'rb') as config_dictionary_file:
+            addresses = pickle.load(config_dictionary_file)
+            print(addresses)
+    except Exception:
+        print('No files found')
 
     scanner = dbluez.Scanner(adapter, new_device_cb)
     scanner.startScan()
