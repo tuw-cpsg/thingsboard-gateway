@@ -163,7 +163,7 @@ def main():
             addresses = pickle.load(config_dictionary_file)
             logger.debug(addresses)
     except Exception:
-        print('No files found')
+        logger.debug('No files found')
 
     scanner = dbluez.Scanner(adapter, new_device_cb)
     scanner.startScan()
