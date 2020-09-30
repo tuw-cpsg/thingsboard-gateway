@@ -20,6 +20,15 @@ AFC_ATM_PRESSURE_UUID       = '8fee2916-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_TEMPERATURE_UUID   = '8fee2917-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_HUMIDITY_UUID      = '8fee2918-3c17-4189-8556-a293fa6b2739'
 AFC_BATTERY_VOLTAGE_UUID    = '8fee2919-3c17-4189-8556-a293fa6b2739'
+AFC_ACC_X_UUID              = '8fee291a-3c17-4189-8556-a293fa6b2739'
+AFC_ACC_Y_UUID              = '8fee291b-3c17-4189-8556-a293fa6b2739'
+AFC_ACC_Z_UUID              = '8fee291c-3c17-4189-8556-a293fa6b2739'
+AFC_GYR_X_UUID              = '8fee291d-3c17-4189-8556-a293fa6b2739'
+AFC_GYR_Y_UUID              = '8fee291e-3c17-4189-8556-a293fa6b2739'
+AFC_GYR_Z_UUID              = '8fee291f-3c17-4189-8556-a293fa6b2739'
+AFC_MAG_X_UUID              = '8fee2920-3c17-4189-8556-a293fa6b2739'
+AFC_MAG_Y_UUID              = '8fee2921-3c17-4189-8556-a293fa6b2739'
+AFC_MAG_Z_UUID              = '8fee2922-3c17-4189-8556-a293fa6b2739'
 
 AFC_SOIL_HUMIDITY_L_UUID    = '8fee29a1-3c17-4189-8556-a293fa6b2739'
 AFC_SOIL_HUMIDITY_H_UUID    = '8fee29a2-3c17-4189-8556-a293fa6b2739'
@@ -102,6 +111,69 @@ AFC_SYNC_DATA = {
         'type': '<B',
         'precision': 0,
         'multiplicator': 1
+    },
+    AFC_ACC_X_UUID: {
+        'name': 'acceleration_x',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_ACC_Y_UUID: {
+        'name': 'acceleration_y',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_ACC_Z_UUID: {
+        'name': 'acceleration_z',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_GYR_X_UUID: {
+        'name': 'angular_velocity_x',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_GYR_Y_UUID: {
+        'name': 'angular_velocity_y',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_GYR_Z_UUID: {
+        'name': 'angular_velocity_z',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_MAG_X_UUID: {
+        'name': 'magnetic_field_x',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_MAG_Y_UUID: {
+        'name': 'magnetic_field_y',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
+    },
+    AFC_MAG_Z_UUID: {
+        'name': 'magnetic_field_z',
+        'size': 2,
+        'type': '<h',
+        'precision': 3,
+        'multiplicator': 0.001
     }
 }
 
@@ -255,9 +327,10 @@ class Thingsboard:
                     
                     if desc == AFC_SOIL_HUMIDITY_L_UUID:
                         self._calibration = True
-                        
-                    jdata[AFC_SYNC_DATA[desc]['name']] = round( \
-                        (struct.unpack_from(AFC_SYNC_DATA[desc]['type'], data, offset)[0]) \
+                    
+                    raw = struct.unpack_from(AFC_SYNC_DATA[desc]['type'], data, offset)[0]
+                    self._logger.debug('Received raw data: {}'.format(raw))
+                    jdata[AFC_SYNC_DATA[desc]['name']] = round( raw \
                         * AFC_SYNC_DATA[desc]['multiplicator'], AFC_SYNC_DATA[desc]['precision'])
                     offset = offset + AFC_SYNC_DATA[desc]['size']
 

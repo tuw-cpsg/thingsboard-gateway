@@ -161,7 +161,7 @@ def main():
     try:
         with open('devices.dict', 'rb') as config_dictionary_file:
             addresses = pickle.load(config_dictionary_file)
-            print(addresses)
+            logger.debug(addresses)
     except Exception:
         print('No files found')
 
