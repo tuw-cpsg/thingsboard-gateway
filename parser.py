@@ -190,6 +190,8 @@ class Thingsboard:
         
         self._node_name = None
         self._jdata = []
+
+        self._sync_success = False
         
     def __enter__(self):
         None
@@ -212,7 +214,6 @@ class Thingsboard:
         cts_time = time.time()
         self._char_sig_rcv.remove()
 
-
         self._device.disconnect()
 
         if len(self._jdata) > 0:
@@ -222,6 +223,8 @@ class Thingsboard:
         
         self._lock.release()
         self._lock = None
+
+        self._sync_success = True
 
     def synchronizeTime(self):
         utctime = datetime.utcnow()
@@ -346,3 +349,6 @@ class Thingsboard:
 
         if 'Value' not in changed_props and 'Notifying' not in changed_props:
             self._logger.warning('Unknown changed properties: {}'.format(changed_props))
+    
+    def syncedSuccessfully(self):
+        return self._sync_success

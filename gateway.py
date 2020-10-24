@@ -37,14 +37,18 @@ def usage():
     print('Options:')
     print('  -h, --help                Show help')
     print('  -i, --adapter=hciX        Specify local adapter interface')
+    print('  -d, --daemon              Enable daemonized mode')
+    print('  -V, --verbose             Be verbose and show debug log')
+    print('  -p, --device_path=<path>  Specify path to store temp. device information')
 
 def parse_options():
     global adapter
     global daemon
     global log_level
+    global device_path
     
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "dhi:V", ["help", "adapter="])
+        opts, args = getopt.getopt(sys.argv[1:], "dhi:Vp:", ["help", "adapter="])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -62,6 +66,8 @@ def parse_options():
             adapter = a
         elif o in ('-V', '--verbose'):
             log_level = logging.DEBUG
+        elif o in ('-p', '--device_path'):
+            device_path = a
         else:
             assert False, "unhandled option"
 
@@ -102,7 +108,6 @@ def quit():
             address = addresses_to_process.pop()
             lock.acquire()
             devices[address].startSynchronization(lock)
-            addresses[address] = { 'last_sync': t_started }
 
             thread = threading.Thread(target=sync)
             thread.daemon = True
@@ -113,9 +118,6 @@ def quit():
             lock.acquire()
             logger.info('Finished')
             lock.release()
-
-            with open('devices.dict', 'wb') as device_dict_file:
-                pickle.dump(addresses, device_dict_file)
 
             loop.quit()
 
@@ -143,7 +145,10 @@ def main():
     global logger
     global log_level
     global t_started
+    global device_path
     
+    device_path = ''
+
     t_started = time.time()
     t_started = int(t_started) - int(t_started) % 60
 
@@ -159,11 +164,12 @@ def main():
     devices = {}
 
     try:
-        with open('devices.dict', 'rb') as config_dictionary_file:
-            addresses = pickle.load(config_dictionary_file)
-            logger.debug(addresses)
+        if device_path != '':
+            with open(device_path, 'rb') as config_dictionary_file:
+                addresses = pickle.load(config_dictionary_file)
+                logger.debug(addresses)
     except Exception:
-        logger.debug('No files found')
+        logger.debug('{} not found')
 
     scanner = dbluez.Scanner(adapter, new_device_cb)
     scanner.startScan()
@@ -180,8 +186,16 @@ def main():
     for address in devices.keys():
         try:
             devices[address].removeDevice()
+            if devices[address].syncedSuccessfully() == True:
+                addresses[address] = { 'last_sync': t_started }
+            else:
+                addresses[address] = { 'last_sync': 0 }
         except Exception as e:
             None
+
+    if device_path != '':
+        with open(device_path, 'wb') as device_dict_file:
+            pickle.dump(addresses, device_dict_file)
 
     logger.info('Exit')
 
