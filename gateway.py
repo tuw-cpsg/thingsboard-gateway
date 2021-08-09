@@ -175,7 +175,7 @@ def main():
     scanner.startScan()
     
     GLib.threads_init()
-    timer = GLib.timeout_add(5000, quit)
+    timer = GLib.timeout_add(10000, quit)
     loop = GLib.MainLoop()
     try:
         loop.run()
