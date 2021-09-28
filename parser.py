@@ -192,6 +192,8 @@ class Thingsboard:
         self._jdata = []
 
         self._sync_success = False
+
+        self._lock = None
         
     def __enter__(self):
         None
@@ -352,3 +354,8 @@ class Thingsboard:
     
     def syncedSuccessfully(self):
         return self._sync_success
+
+    def locked(self):
+        if self._lock != None:
+            return self._lock.locked()
+        return None

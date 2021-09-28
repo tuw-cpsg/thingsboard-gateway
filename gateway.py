@@ -30,6 +30,7 @@ loop      = None
 timer     = None
 scanner   = None
 log_level = None
+daemon    = False
 
 def usage():
     print('Usage:')
@@ -77,6 +78,7 @@ def new_device_cb(adapter, address, frametype, power, url):
     global addresses_to_process
     global devices
     global t_started
+    global daemon
 
     logger.info('Found new device: {} with \'{}\''.format(address, url))
     if url == 'http://www.afarcloud.eu/':
@@ -90,6 +92,14 @@ def new_device_cb(adapter, address, frametype, power, url):
             addresses_to_process.append(address)
         if address not in devices.keys():
             devices[address] = afcdev
+
+        if daemon == True:
+            if devices[address].locked() != None and devices[address].locked() == True:
+                return
+            logger.info('Start synchronization of {} in background'.format(address))
+            lock = Lock()
+            lock.acquire()
+            devices[address].startSynchronization(lock)
 
 def quit():
     global logger
@@ -146,6 +156,7 @@ def main():
     global log_level
     global t_started
     global device_path
+    global daemon
     
     device_path = ''
 
@@ -175,7 +186,8 @@ def main():
     scanner.startScan()
     
     GLib.threads_init()
-    timer = GLib.timeout_add(5000, quit)
+    if daemon == False:
+        timer = GLib.timeout_add(5000, quit)
     loop = GLib.MainLoop()
     try:
         loop.run()
