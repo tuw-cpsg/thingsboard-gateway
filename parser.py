@@ -5,6 +5,7 @@ import time
 import logging
 import json
 
+import threading
 from threading import Condition, Lock
 from datetime import datetime
 
@@ -194,6 +195,7 @@ class Thingsboard:
         self._sync_success = False
 
         self._lock = None
+        self._cleanup = 0
         
     def __enter__(self):
         None
@@ -201,9 +203,10 @@ class Thingsboard:
     def __exit__(self):
         None
         
-    def startSynchronization(self, lock = None):
+    def startSynchronization(self, lock = None, cleanup = 0):
         self._logger.info('Start synchronization')
         self._lock = lock
+        self._cleanup = cleanup
         self._device.connect(self.disconnect_cb, self.discoveryComplete)
         self._sync_cnt = 0
         self._byte_cnt = 0
@@ -227,6 +230,17 @@ class Thingsboard:
         self._lock = None
 
         self._sync_success = True
+
+        def cleanup():
+            self._logger.debug('Cleaning up in {} s'.format(self._cleanup))
+            time.sleep(self._cleanup)
+            self._logger.debug('Cleaning up'.format(self._cleanup))
+            self._device.remove()
+
+        if self._cleanup > 0:
+            thread = threading.Thread(target=cleanup)
+            thread.daemon = True
+            thread.start()
 
     def synchronizeTime(self):
         utctime = datetime.utcnow()

@@ -99,7 +99,7 @@ def new_device_cb(adapter, address, frametype, power, url):
             logger.info('Start synchronization of {} in background'.format(address))
             lock = Lock()
             lock.acquire()
-            devices[address].startSynchronization(lock)
+            devices[address].startSynchronization(lock, 900)
 
 def quit():
     global logger

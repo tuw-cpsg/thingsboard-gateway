@@ -132,7 +132,7 @@ class Device:
         self._device = dbus.Interface(self._sysbus.get_object(BLUEZ, self._path), BLUEZ_DEVICE)
         
     def __del__(self):
-        None
+        self._logger.debug('device {} deleted'.format(self._path))
         #self._adapterobj.RemoveDevice(self._path)
 
     def _on_prop_changed(self, properties, changed_props, invalidated_props):
