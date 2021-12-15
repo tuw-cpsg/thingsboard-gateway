@@ -10,7 +10,7 @@ $ ./gateway.py 2>&1 >> data.out | ts "%Y-%m-%d %T" >> gateway.log
 ```
 The content from `data.out` is piped to `mosquitto_pub` to transfer the data to a MQTT broker. The log output is piped to `ts` and stored in `mosquitto_pub.log`.
 ```bash
-mosquitto_pub -d -h "${MQTT_HOST}" -p "{MQTT_PORT}" -t "${MQTT_TOPIC}" -u "${MQTT_USER}" -l < data.out 2>&1 | ts "%Y-%m-%d %T" >> mosquitto_pub.log
+mosquitto_pub -d -h "${MQTT_HOST}" -p "${MQTT_PORT}" -t "${MQTT_TOPIC}" -u "${MQTT_USER}" -l < data.out 2>&1 | ts "%Y-%m-%d %T" >> mosquitto_pub.log
 ```
 
 # Docker Image
